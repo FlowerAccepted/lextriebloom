@@ -13,6 +13,22 @@ class VocabularyUI:
     def __init__(self):
         self.manager = VocabularyManager(storage_backend=JSONStorage())
         self.default_save_path = "vocabulary.json"
+        self.font_size = 16  # 默认字体大小
+        
+        # 字体设置
+        self.en_font = "Arial"  # 英文字体
+        self.zh_font = "SimHei"  # 中文字体
+        self.font_style = "normal"  # 字体样式
+        
+        # 主题设置
+        self.theme = "soft"  # 当前主题
+        self.themes_dict = {
+            "soft": gr.themes.Soft(),
+            "default": gr.themes.Default(),
+            "monochrome": gr.themes.Monochrome(),
+            "glass": gr.themes.Glass()
+        }
+        
         self.load_saved_data()
     
     def load_saved_data(self):
@@ -94,6 +110,67 @@ class VocabularyUI:
         success, msg = self.manager.export_to_file(filepath, export_format)
         return msg
     
+    def delete_all_data_ui(self) -> str:
+        """清除所有数据的回调函数"""
+        try:
+            # 重新初始化Trie
+            self.manager.trie = type(self.manager.trie)()
+            # 删除保存的文件
+            import os
+            if os.path.exists(self.default_save_path):
+                os.remove(self.default_save_path)
+            return "✅ 所有数据已清除！词库已重置。"
+        except Exception as e:
+            return f"❌ 清除数据失败: {e}"
+    
+    def set_font_size(self, size: int) -> str:
+        """设置字体大小的回调函数"""
+        try:
+            self.font_size = max(12, min(size, 24))  # 限制范围 12-24
+            return f"✅ 字体大小已设置为 {self.font_size}px"
+        except Exception as e:
+            return f"❌ 设置失败: {e}"
+    
+    def set_fonts(self, en_font: str, zh_font: str) -> str:
+        """设置英文和中文字体的回调函数"""
+        try:
+            self.en_font = en_font if en_font.strip() else "Arial"
+            self.zh_font = zh_font if zh_font.strip() else "SimHei"
+            return f"✅ 英文字体: {self.en_font}\n✅ 中文字体: {self.zh_font}"
+        except Exception as e:
+            return f"❌ 设置失败: {e}"
+    
+    def set_font_style(self, style: str) -> str:
+        """设置字体样式的回调函数"""
+        try:
+            self.font_style = style
+            style_names = {
+                "normal": "正常",
+                "italic": "斜体",
+                "bold": "加粗",
+                "bold-italic": "加粗斜体"
+            }
+            return f"✅ 字体样式已设置为: {style_names.get(style, style)}"
+        except Exception as e:
+            return f"❌ 设置失败: {e}"
+    
+    def set_theme(self, theme_name: str) -> str:
+        """设置主题的回调函数"""
+        try:
+            if theme_name in self.themes_dict:
+                self.theme = theme_name
+                theme_cn = {
+                    "soft": "柔和",
+                    "default": "默认",
+                    "monochrome": "单色",
+                    "glass": "玻璃"
+                }
+                return f"✅ 主题已切换为: {theme_cn.get(theme_name, theme_name)}\n(需要刷新页面生效)"
+            else:
+                return "❌ 主题不存在"
+        except Exception as e:
+            return f"❌ 设置失败: {e}"
+    
     def _auto_save(self):
         """自动保存"""
         self.manager.save(self.default_save_path)
@@ -101,9 +178,10 @@ class VocabularyUI:
     def build_interface(self) -> gr.Blocks:
         """构建Gradio界面"""
         
-        with gr.Blocks(title="📚 单词积累本", theme=gr.themes.Soft()) as demo:
-            gr.Markdown("""
-            # 📚 单词积累本
+        with gr.Blocks(title="LextrieBloom - 单词积累本", theme=gr.themes.Soft()) as demo:
+            gr.Markdown(f"""
+            # 🌺 LextrieBloom
+            ## 高效的单词积累本
             
             基于Trie数据结构的高效单词管理工具。支持导入、查询、统计等功能。
             """)
@@ -286,11 +364,90 @@ class VocabularyUI:
                             inputs=[export_path, export_format],
                             outputs=export_output
                         )
+                    
+                    with gr.Group():
+                        gr.Markdown("### 🔧 高级选项")
+                        # 删除所有数据
+                        gr.Markdown("**⚠️ 警告区域**")
+                        delete_all_btn = gr.Button("🗑️ 清除所有数据", variant="stop")
+                        delete_all_output = gr.Textbox(label="清除结果", interactive=False)
+                        
+                        delete_all_btn.click(
+                            fn=self.delete_all_data_ui,
+                            inputs=[],
+                            outputs=delete_all_output
+                        )
                 
-                # 页签8: 帮助
+                # 页签8: 设置
+                with gr.TabItem("⚙️ 设置"):
+                    with gr.Group():
+                        gr.Markdown("### 🔤 字体设置")
+                        
+                        # 英文字体
+                        en_font_input = gr.Textbox(
+                            label="英文字体名称",
+                            value=self.en_font,
+                            placeholder="例: Arial, Times New Roman, Courier"
+                        )
+                        
+                        # 中文字体
+                        zh_font_input = gr.Textbox(
+                            label="中文字体名称",
+                            value=self.zh_font,
+                            placeholder="例: SimHei, SimSun, Microsoft YaHei"
+                        )
+                        
+                        font_apply_btn = gr.Button("💾 应用字体", variant="primary")
+                        font_result = gr.Textbox(label="设置结果", interactive=False)
+                        
+                        font_apply_btn.click(
+                            fn=self.set_fonts,
+                            inputs=[en_font_input, zh_font_input],
+                            outputs=font_result
+                        )
+                    
+                    with gr.Group():
+                        gr.Markdown("### 🎨 字体样式")
+                        
+                        font_style_dropdown = gr.Dropdown(
+                            choices=["normal", "italic", "bold", "bold-italic"],
+                            value=self.font_style,
+                            label="字体样式",
+                            info="正常 / 斜体 / 加粗 / 加粗斜体"
+                        )
+                        
+                        style_apply_btn = gr.Button("💾 应用样式", variant="primary")
+                        style_result = gr.Textbox(label="设置结果", interactive=False)
+                        
+                        style_apply_btn.click(
+                            fn=self.set_font_style,
+                            inputs=font_style_dropdown,
+                            outputs=style_result
+                        )
+                    
+                    with gr.Group():
+                        gr.Markdown("### 🌈 颜色主题")
+                        
+                        theme_dropdown = gr.Dropdown(
+                            choices=["soft", "default", "monochrome", "glass"],
+                            value=self.theme,
+                            label="选择主题",
+                            info="柔和 / 默认 / 单色 / 玻璃"
+                        )
+                        
+                        theme_apply_btn = gr.Button("🔄 切换主题", variant="primary")
+                        theme_result = gr.Textbox(label="设置结果", interactive=False)
+                        
+                        theme_apply_btn.click(
+                            fn=self.set_theme,
+                            inputs=theme_dropdown,
+                            outputs=theme_result
+                        )
+                
+                # 页签9: 帮助
                 with gr.TabItem("❓ 帮助"):
                     gr.Markdown("""
-                    ## 使用说明
+                    ## 🌺 LextrieBloom 使用说明
                     
                     ### ➕ 添加单词
                     - 输入单词和释义，点击添加按钮
@@ -319,6 +476,8 @@ class VocabularyUI:
                     - **保存**: 将当前单词本保存到JSON/Pickle文件
                     - **加载**: 从保存的文件中加载单词本
                     - **导出**: 导出为TXT/JSON/CSV格式
+                    - **字体大小**: 通过滑块调整UI字体大小(12-24px)
+                    - **清除所有数据**: 清空整个词库并删除保存文件（谨慎使用！）
                     
                     ## 文件格式示例
                     
@@ -336,6 +495,7 @@ class VocabularyUI:
                     - 🔍 支持精确查询和前缀查询
                     - 📤 支持文件导入导出
                     - 🎯 自动保存功能
+                    - 🎨 字体大小自定义
                     - 🔧 易于扩展的架构
                     """)
         
