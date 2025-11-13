@@ -1,0 +1,23 @@
+# 这是一个示例单词文件
+# 格式: 单词 空格 释义
+# 支持注释行（以#开头）
+
+apple 苹果，苹果公司
+application 应用程序
+apply 应用，申请
+book 书籍，书
+cat 猫
+dog 狗
+elephant 大象
+fantastic 极好的
+hello 你好
+world 世界
+programming 编程
+python Python编程语言
+algorithm 算法
+data 数据
+structure 结构
+tree 树
+graph 图
+search 搜索
+sort 排序
