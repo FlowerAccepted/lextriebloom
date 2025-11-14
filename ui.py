@@ -5,6 +5,7 @@
 import gradio as gr
 from vocabulary_manager import VocabularyManager, JSONStorage, PickleStorage
 from pathlib import Path
+import settings_manager
 
 
 class VocabularyUI:
@@ -20,15 +21,48 @@ class VocabularyUI:
         self.zh_font = "SimHei"  # 中文字体
         self.font_style = "normal"  # 字体样式
         
-        # 主题设置
+        # 主题设置（使用主题类）
         self.theme = "soft"  # 当前主题
+        # 使用主题类而不是实例或工厂，兼容 Gradio 对 Theme 的要求（theme 应为 class）
         self.themes_dict = {
-            "soft": gr.themes.Soft(),
-            "default": gr.themes.Default(),
-            "monochrome": gr.themes.Monochrome(),
-            "glass": gr.themes.Glass()
+            "soft": gr.themes.Soft,
+            "default": gr.themes.Default,
+            "monochrome": gr.themes.Monochrome,
+            "glass": gr.themes.Glass,
+            # 额外预设（可按需扩展）
+            "solarized": gr.themes.Default,
+            "midnight": gr.themes.Monochrome,
+            "pastel": gr.themes.Soft
         }
         
+        # 为主题添加中英文标签（用于 UI 下拉框）
+        self.theme_labels = {
+            "soft": "🌤️ 柔和",
+            "default": "🎨 默认",
+            "monochrome": "⚫ 单色",
+            "glass": "🏔️ 玻璃",
+            "solarized": "🌅 Solarized",
+            "midnight": "🌙 午夜",
+            "pastel": "🎀 Pastel"
+        }
+        
+        # 主题实例缓存（在 __init__ 中预先创建）
+        self.theme_instances = {}
+        for theme_name, theme_class in self.themes_dict.items():
+            try:
+                self.theme_instances[theme_name] = theme_class()
+            except Exception:
+                self.theme_instances[theme_name] = gr.themes.Default()
+        
+        # 尝试从 settings.json 加载用户设置
+        s = settings_manager.load_settings()
+        if s:
+            self.font_size = s.get("font_size", self.font_size)
+            self.en_font = s.get("en_font", self.en_font)
+            self.zh_font = s.get("zh_font", self.zh_font)
+            self.font_style = s.get("font_style", self.font_style)
+            self.theme = s.get("theme", self.theme)
+
         self.load_saved_data()
     
     def load_saved_data(self):
@@ -123,25 +157,45 @@ class VocabularyUI:
         except Exception as e:
             return f"❌ 清除数据失败: {e}"
     
-    def set_font_size(self, size: int) -> str:
-        """设置字体大小的回调函数"""
+    def set_font_size(self, size: int) -> tuple:
+        """设置字体倍率的回调函数，返回 (消息, CSS HTML)"""
         try:
-            self.font_size = max(12, min(size, 24))  # 限制范围 12-24
-            return f"✅ 字体大小已设置为 {self.font_size}px"
+            # size 现在是倍率百分比（例如 100 = 1.0x, 150 = 1.5x）
+            self.font_size = max(80, min(size, 150))  # 限制范围 80%-150%
+            # 保存设置
+            settings_manager.save_settings({
+                "font_size": self.font_size,
+                "en_font": getattr(self, 'en_font', 'Arial'),
+                "zh_font": getattr(self, 'zh_font', 'SimHei'),
+                "font_style": getattr(self, 'font_style', 'normal'),
+                "theme": getattr(self, 'theme', 'soft')
+            })
+            msg = f"✅ 字体倍率已设置为 {self.font_size}%"
+            css = self.make_css_html()
+            return msg, css
         except Exception as e:
-            return f"❌ 设置失败: {e}"
+            return f"❌ 设置失败: {e}", self.make_css_html()
     
-    def set_fonts(self, en_font: str, zh_font: str) -> str:
-        """设置英文和中文字体的回调函数"""
+    def set_fonts(self, en_font: str, zh_font: str) -> tuple:
+        """设置英文和中文字体的回调函数，返回 (消息, CSS HTML)"""
         try:
             self.en_font = en_font if en_font.strip() else "Arial"
             self.zh_font = zh_font if zh_font.strip() else "SimHei"
-            return f"✅ 英文字体: {self.en_font}\n✅ 中文字体: {self.zh_font}"
+            settings_manager.save_settings({
+                "font_size": getattr(self, 'font_size', 16),
+                "en_font": self.en_font,
+                "zh_font": self.zh_font,
+                "font_style": getattr(self, 'font_style', 'normal'),
+                "theme": getattr(self, 'theme', 'soft')
+            })
+            msg = f"✅ 英文字体: {self.en_font}\n✅ 中文字体: {self.zh_font}"
+            css = self.make_css_html()
+            return msg, css
         except Exception as e:
-            return f"❌ 设置失败: {e}"
+            return f"❌ 设置失败: {e}", self.make_css_html()
     
-    def set_font_style(self, style: str) -> str:
-        """设置字体样式的回调函数"""
+    def set_font_style(self, style: str) -> tuple:
+        """设置字体样式的回调函数，返回 (消息, CSS HTML)"""
         try:
             self.font_style = style
             style_names = {
@@ -150,26 +204,154 @@ class VocabularyUI:
                 "bold": "加粗",
                 "bold-italic": "加粗斜体"
             }
-            return f"✅ 字体样式已设置为: {style_names.get(style, style)}"
+            settings_manager.save_settings({
+                "font_size": getattr(self, 'font_size', 16),
+                "en_font": getattr(self, 'en_font', 'Arial'),
+                "zh_font": getattr(self, 'zh_font', 'SimHei'),
+                "font_style": self.font_style,
+                "theme": getattr(self, 'theme', 'soft')
+            })
+            msg = f"✅ 字体样式已设置为: {style_names.get(style, style)}"
+            css = self.make_css_html()
+            return msg, css
         except Exception as e:
-            return f"❌ 设置失败: {e}"
+            return f"❌ 设置失败: {e}", self.make_css_html()
     
-    def set_theme(self, theme_name: str) -> str:
-        """设置主题的回调函数"""
+    def set_theme(self, theme_name: str) -> tuple:
+        """设置主题的回调函数，返回 (消息, HTML/JS 脚本)"""
         try:
             if theme_name in self.themes_dict:
                 self.theme = theme_name
-                theme_cn = {
-                    "soft": "柔和",
-                    "default": "默认",
-                    "monochrome": "单色",
-                    "glass": "玻璃"
-                }
-                return f"✅ 主题已切换为: {theme_cn.get(theme_name, theme_name)}\n(需要刷新页面生效)"
+                settings_manager.save_settings({
+                    "font_size": getattr(self, 'font_size', 16),
+                    "en_font": getattr(self, 'en_font', 'Arial'),
+                    "zh_font": getattr(self, 'zh_font', 'SimHei'),
+                    "font_style": getattr(self, 'font_style', 'normal'),
+                    "theme": self.theme
+                })
+                msg = f"✅ 主题已切换为: {self.theme_labels.get(theme_name, theme_name)}"
+                # 返回自动刷新页面的 JavaScript
+                refresh_js = """
+<script>
+setTimeout(function() {
+  location.reload();
+}, 500);
+</script>
+"""
+                return msg, refresh_js
             else:
-                return "❌ 主题不存在"
+                return "❌ 主题不存在", ""
         except Exception as e:
-            return f"❌ 设置失败: {e}"
+            return f"❌ 设置失败: {e}", ""
+    
+    def make_css_html(self) -> str:
+        """生成 CSS HTML 字符串用于页面立即注入（使用字体倍率，保持相对大小）"""
+        en = getattr(self, 'en_font', 'Arial')
+        zh = getattr(self, 'zh_font', 'SimHei')
+        # 倍率范围 80%-150%，转换为倍数（100% = 1.0）
+        scale = getattr(self, 'font_size', 100) / 100.0
+        style = getattr(self, 'font_style', 'normal')
+        weight = '400'
+        font_style = 'normal'
+        
+        if style == 'italic':
+            font_style = 'italic'
+        elif style == 'bold':
+            weight = '700'
+        elif style == 'bold-italic':
+            weight = '700'
+            font_style = 'italic'
+        
+        # 清理字体名称（移除可能的无效字符或多个字体声明）
+        en_clean = en.split(',')[0].strip() if ',' in en else en
+        zh_clean = zh.split(',')[0].strip() if ',' in zh else zh
+        
+        # 生成覆盖力强的 CSS，使用倍率而非固定大小（保留 MD 标题相对大小）
+        css = f"""
+<style>
+:root {{
+  --lex-font-scale: {scale};
+  --lex-font-weight: {weight};
+  --lex-font-style: {font_style};
+}}
+
+/* 基础字体设置（不覆盖标题） */
+body, div, span, p, label, button, input, textarea, select {{
+  font-family: '{en_clean}', '{zh_clean}', Arial, Helvetica, sans-serif !important;
+  font-size: calc(1em * var(--lex-font-scale)) !important;
+  font-weight: var(--lex-font-weight) !important;
+  font-style: var(--lex-font-style) !important;
+}}
+
+/* 针对 Gradio 容器（不覆盖标题） */
+.gradio-container {{
+  font-size-adjust: none;
+}}
+
+.gradio-container > div:not(h1):not(h2):not(h3):not(h4):not(h5):not(h6),
+.gradio-container span,
+.gradio-container p,
+.gradio-container label,
+.gradio-container button {{
+  font-family: '{en_clean}', '{zh_clean}', Arial, sans-serif !important;
+  font-size: calc(1em * var(--lex-font-scale)) !important;
+  font-weight: var(--lex-font-weight) !important;
+  font-style: var(--lex-font-style) !important;
+}}
+
+/* 文本输入框 */
+input[type="text"],
+input[type="password"],
+input[type="email"],
+textarea,
+.gradio-textbox input,
+.gradio-textbox textarea {{
+  font-family: '{en_clean}', '{zh_clean}', monospace !important;
+  font-size: calc(1em * var(--lex-font-scale)) !important;
+  font-weight: var(--lex-font-weight) !important;
+}}
+
+/* 按钮文本 */
+button, .gr-button {{
+  font-family: '{en_clean}', '{zh_clean}', Arial, sans-serif !important;
+  font-size: calc(1em * var(--lex-font-scale)) !important;
+  font-weight: var(--lex-font-weight) !important;
+}}
+
+/* 保留 Markdown 标题的相对大小 */
+.gradio-markdown h1 {{
+  font-size: calc(2em * var(--lex-font-scale)) !important;
+  font-family: '{en_clean}', '{zh_clean}', Arial, sans-serif !important;
+}}
+
+.gradio-markdown h2 {{
+  font-size: calc(1.5em * var(--lex-font-scale)) !important;
+  font-family: '{en_clean}', '{zh_clean}', Arial, sans-serif !important;
+}}
+
+.gradio-markdown h3 {{
+  font-size: calc(1.25em * var(--lex-font-scale)) !important;
+  font-family: '{en_clean}', '{zh_clean}', Arial, sans-serif !important;
+}}
+
+.gradio-markdown p {{
+  font-family: '{en_clean}', '{zh_clean}', Arial, sans-serif !important;
+  font-size: calc(1em * var(--lex-font-scale)) !important;
+}}
+</style>
+"""
+        return css
+
+    def make_theme(self):
+        """根据当前设置返回 Gradio 主题实例"""
+        try:
+            theme_instance = self.theme_instances.get(self.theme, None)
+            if theme_instance is not None:
+                return theme_instance
+            else:
+                return gr.themes.Soft()
+        except Exception:
+            return gr.themes.Default()
     
     def _auto_save(self):
         """自动保存"""
@@ -178,13 +360,17 @@ class VocabularyUI:
     def build_interface(self) -> gr.Blocks:
         """构建Gradio界面"""
         
-        with gr.Blocks(title="LextrieBloom - 单词积累本", theme=gr.themes.Soft()) as demo:
+        # 选择主题类（Gradio 要求 theme 为 class），并在 Blocks 中传递该类
+        theme_obj = self.make_theme()
+        with gr.Blocks(title="LextrieBloom - 单词积累本", theme=theme_obj) as demo:
             gr.Markdown(f"""
-            # 🌺 LextrieBloom
+            # LextrieBloom
             ## 高效的单词积累本
             
             基于Trie数据结构的高效单词管理工具。支持导入、查询、统计等功能。
             """)
+            # 在构建界面时注入初始化 CSS，以应用启动时的字体/样式设置
+            css_output = gr.HTML(self.make_css_html())
             
             with gr.Tabs():
                 # 页签1: 添加单词
@@ -399,11 +585,34 @@ class VocabularyUI:
                         
                         font_apply_btn = gr.Button("💾 应用字体", variant="primary")
                         font_result = gr.Textbox(label="设置结果", interactive=False)
+                        font_css = gr.HTML()  # 隐藏输出用于接收 CSS
                         
                         font_apply_btn.click(
                             fn=self.set_fonts,
                             inputs=[en_font_input, zh_font_input],
-                            outputs=font_result
+                            outputs=[font_result, font_css]
+                        )
+                    
+                    with gr.Group():
+                        gr.Markdown("### 📏 字体倍率")
+                        
+                        font_size_slider = gr.Slider(
+                            minimum=80,
+                            maximum=150,
+                            value=self.font_size,
+                            step=5,
+                            label="字体倍率 (%)",
+                            info="80%-150%（影响文本及输入框，保持标题相对大小）"
+                        )
+                        
+                        size_apply_btn = gr.Button("💾 应用倍率", variant="primary")
+                        size_result = gr.Textbox(label="设置结果", interactive=False)
+                        size_css = gr.HTML()  # 隐藏输出用于接收 CSS
+                        
+                        size_apply_btn.click(
+                            fn=self.set_font_size,
+                            inputs=font_size_slider,
+                            outputs=[size_result, size_css]
                         )
                     
                     with gr.Group():
@@ -418,36 +627,49 @@ class VocabularyUI:
                         
                         style_apply_btn = gr.Button("💾 应用样式", variant="primary")
                         style_result = gr.Textbox(label="设置结果", interactive=False)
+                        style_css = gr.HTML()  # 隐藏输出用于接收 CSS
                         
                         style_apply_btn.click(
                             fn=self.set_font_style,
                             inputs=font_style_dropdown,
-                            outputs=style_result
+                            outputs=[style_result, style_css]
                         )
                     
                     with gr.Group():
                         gr.Markdown("### 🌈 颜色主题")
                         
+                        # 扩展主题列表，并用中文标签显示
+                        theme_choices = list(self.themes_dict.keys())
+                        theme_labels_list = [self.theme_labels.get(t, t) for t in theme_choices]
+                        
                         theme_dropdown = gr.Dropdown(
-                            choices=["soft", "default", "monochrome", "glass"],
+                            choices=theme_choices,
                             value=self.theme,
                             label="选择主题",
-                            info="柔和 / 默认 / 单色 / 玻璃"
+                            info="选择 Gradio 内置主题"
                         )
                         
-                        theme_apply_btn = gr.Button("🔄 切换主题", variant="primary")
+                        # 在 Dropdown 旁边显示标签（可选：也可通过 label 映射）
+                        gr.Markdown(
+                            "**可用主题：** " + " | ".join(
+                                [f"{label} ({key})" for key, label in self.theme_labels.items()]
+                            )
+                        )
+                        
+                        theme_apply_btn = gr.Button("🔄 应用主题（将自动刷新）", variant="primary")
                         theme_result = gr.Textbox(label="设置结果", interactive=False)
+                        theme_refresh = gr.HTML()  # 隐藏输出用于接收刷新脚本
                         
                         theme_apply_btn.click(
                             fn=self.set_theme,
                             inputs=theme_dropdown,
-                            outputs=theme_result
+                            outputs=[theme_result, theme_refresh]
                         )
                 
                 # 页签9: 帮助
                 with gr.TabItem("❓ 帮助"):
                     gr.Markdown("""
-                    ## 🌺 LextrieBloom 使用说明
+                    ## LextrieBloom 使用说明
                     
                     ### ➕ 添加单词
                     - 输入单词和释义，点击添加按钮
@@ -476,8 +698,13 @@ class VocabularyUI:
                     - **保存**: 将当前单词本保存到JSON/Pickle文件
                     - **加载**: 从保存的文件中加载单词本
                     - **导出**: 导出为TXT/JSON/CSV格式
-                    - **字体大小**: 通过滑块调整UI字体大小(12-24px)
                     - **清除所有数据**: 清空整个词库并删除保存文件（谨慎使用！）
+                    
+                    ### ⚙️ 设置
+                    - **字体**: 自定义英文和中文字体名称（修改后点击"应用字体"立即生效，无需刷新）
+                    - **字体倍率**: 用滑块调整显示倍率（80%-150%，修改后点击"应用倍率"立即生效，标题大小会自动缩放）
+                    - **字体样式**: 选择正常、斜体、加粗或加粗斜体（修改后点击"应用样式"立即生效）
+                    - **颜色主题**: 从 7 个 Gradio 内置主题中选择（点击"应用主题"会自动刷新页面以生效）
                     
                     ## 文件格式示例
                     
@@ -495,8 +722,10 @@ class VocabularyUI:
                     - 🔍 支持精确查询和前缀查询
                     - 📤 支持文件导入导出
                     - 🎯 自动保存功能
-                    - 🎨 字体大小自定义
+                    - 🎨 字体/样式/主题自定义（设置持久化到 settings.json）
                     - 🔧 易于扩展的架构
+                    
+                    copyright © 2025 [FlowerAccepted](luogu.com.cn/user/1023732)
                     """)
         
         return demo
