@@ -2,12 +2,15 @@
 Trie数据结构的实现，支持单词存储和查询
 """
 
+from datetime import datetime
+
 class TrieNode:
     """Trie树的节点类"""
     def __init__(self):
         self.children = {}
         self.is_end = False
         self.definition = ""  # 存储单词释义
+        self.timestamp = None  # 记录加入时间
 
 
 class Trie:
@@ -16,13 +19,14 @@ class Trie:
     def __init__(self):
         self.root = TrieNode()
     
-    def insert(self, word: str, definition: str = ""):
+    def insert(self, word: str, definition: str = "", timestamp: str = None):
         """
         插入单词及其释义
         
         Args:
             word: 要插入的单词
             definition: 单词的释义
+            timestamp: 加入时间（ISO格式），如果为None则使用当前时间
         """
         node = self.root
         word = word.lower().strip()
@@ -38,6 +42,9 @@ class Trie:
         # 如果单词已存在，更新释义
         node.is_end = True
         node.definition = definition
+        # 只在新单词时设置时间戳，已存在的单词不更新时间
+        if node.timestamp is None:
+            node.timestamp = timestamp or datetime.now().isoformat()
         return True
     
     def search(self, word: str) -> tuple:
@@ -48,19 +55,19 @@ class Trie:
             word: 要查询的单词
             
         Returns:
-            (是否存在, 释义)
+            (是否存在, 释义, 时间戳)
         """
         node = self.root
         word = word.lower().strip()
         
         for char in word:
             if char not in node.children:
-                return False, ""
+                return False, "", None
             node = node.children[char]
         
         if node.is_end:
-            return True, node.definition
-        return False, ""
+            return True, node.definition, node.timestamp
+        return False, "", None
     
     def prefix_search(self, prefix: str) -> list:
         """
@@ -89,7 +96,7 @@ class Trie:
         获取所有单词
         
         Returns:
-            [(单词, 释义), ...] 列表，按字典序排序
+            [(单词, 释义, 时间戳), ...] 列表，按字典序排序
         """
         result = []
         self._dfs(self.root, "", result)
@@ -105,7 +112,7 @@ class Trie:
             result: 结果列表
         """
         if node.is_end:
-            result.append((prefix, node.definition))
+            result.append((prefix, node.definition, node.timestamp))
         
         for char, child_node in node.children.items():
             self._dfs(child_node, prefix + char, result)

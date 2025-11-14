@@ -4,6 +4,8 @@
 
 import gradio as gr
 from vocabulary_manager import VocabularyManager, JSONStorage, PickleStorage
+from affix_manager import AffixManager
+from statistics_analyzer import StatisticsAnalyzer
 from pathlib import Path
 import settings_manager
 
@@ -13,6 +15,8 @@ class VocabularyUI:
     
     def __init__(self):
         self.manager = VocabularyManager(storage_backend=JSONStorage())
+        self.affix_manager = AffixManager(storage_path="affixes.json")
+        self.stats_analyzer = StatisticsAnalyzer()
         self.default_save_path = "vocabulary.json"
         self.font_size = 16  # 默认字体大小
         
@@ -95,7 +99,7 @@ class VocabularyUI:
     
     def search_word_ui(self, word: str) -> str:
         """查询单词的回调函数"""
-        _, result = self.manager.search_word(word)
+        _, result, timestamp = self.manager.search_word(word)
         return result
     
     def prefix_search_ui(self, prefix: str) -> str:
@@ -243,6 +247,115 @@ setTimeout(function() {
                 return "❌ 主题不存在", ""
         except Exception as e:
             return f"❌ 设置失败: {e}", ""
+    
+    # ============ 词缀管理相关回调方法 ============
+    
+    def add_affix_ui(self, affix: str, definition: str, category: str) -> str:
+        """添加词缀的回调函数"""
+        success, msg = self.affix_manager.add_affix(affix, definition, category)
+        return msg
+    
+    def query_affix_definition_ui(self, affix: str) -> str:
+        """查询词缀释义的回调函数"""
+        success, msg = self.affix_manager.get_affix_definition(affix)
+        return msg
+    
+    def list_all_affixes_ui(self) -> str:
+        """列出所有词缀的回调函数"""
+        success, msg = self.affix_manager.list_all_affixes()
+        return msg
+    
+    def categorize_words_by_affix_ui(self) -> str:
+        """按词缀分类单词的回调函数"""
+        words_data = self.manager.get_all_words_with_timestamp()
+        words = [(w, d) for w, d, _ in words_data]
+        categorized = self.affix_manager.categorize_words(words)
+        
+        result = "📚 单词按词缀分类\n"
+        result += "="*60 + "\n\n"
+        
+        for affix, words_list in sorted(categorized.items()):
+            result += f"【{affix}】 ({len(words_list)} 个)\n"
+            for word, definition in words_list[:20]:
+                result += f"  • {word}: {definition}\n"
+            if len(words_list) > 20:
+                result += f"  ... 还有 {len(words_list) - 20} 个\n"
+            result += "\n"
+        
+        return result
+    
+    def detect_affixes_ui(self) -> str:
+        """检测潜在词缀的回调函数"""
+        words_data = self.manager.get_all_words_with_timestamp()
+        words = [w for w, _, _ in words_data]
+        potential = self.affix_manager.extract_potential_affixes(words)
+        
+        if not potential:
+            return "未检测到潜在词缀（需要更多数据）"
+        
+        result = "🔍 检测到的潜在词缀\n"
+        result += "="*60 + "\n"
+        result += "这些词缀可能值得添加到词缀库中:\n\n"
+        
+        for affix, count in sorted(potential.items(), key=lambda x: -x[1]):
+            result += f"• {affix}: 出现 {count} 次\n"
+        
+        return result
+    
+    # ============ 统计分析相关回调方法 ============
+    
+    def get_daily_statistics_ui(self) -> str:
+        """获取每日统计的回调函数"""
+        words_data = self.manager.get_all_words_with_timestamp()
+        daily_stats = self.stats_analyzer.get_daily_statistics(words_data)
+        heatmap = self.stats_analyzer.generate_heatmap_text(daily_stats)
+        return heatmap
+    
+    def get_word_timestamps_ui(self) -> str:
+        """获取单词加入时间的回调函数"""
+        words_data = self.manager.get_all_words_with_timestamp()
+        result = self.stats_analyzer.get_word_with_timestamp(words_data)
+        return result
+    
+    def get_trending_words_ui(self, days: int = 7) -> str:
+        """获取最近N天的热门单词的回调函数"""
+        words_data = self.manager.get_all_words_with_timestamp()
+        result = self.stats_analyzer.get_trending_words(words_data, int(days))
+        return result
+    
+    def query_time_range_ui(self, start_date: str, end_date: str) -> str:
+        """查询时间范围内的单词的回调函数"""
+        words_data = self.manager.get_all_words_with_timestamp()
+        success, msg = self.stats_analyzer.get_time_range_statistics(
+            words_data, start_date, end_date
+        )
+        return msg
+    
+    def fail_jump_affix_suggestion_ui(self, word: str) -> str:
+        """Fail跳转 - 建议将差异部分存入词缀的回调函数"""
+        # 查询单词是否存在
+        exists, _, _ = self.manager.search_word(word)
+        
+        if exists:
+            return f"✅ 单词 '{word}' 已在词库中"
+        
+        # 单词不存在，提取可能的词缀并建议
+        potential_parts = self.affix_manager.extract_difference_parts(word)
+        
+        result = f"❌ 单词 '{word}' 不在词库中\n\n"
+        result += "💡 您可能想要将这些部分存入词缀库:\n"
+        result += "="*60 + "\n"
+        
+        for part in potential_parts[:5]:
+            exists_affix, affix_info = self.affix_manager.get_affix_definition(part)
+            if exists_affix:
+                result += f"✓ '{part}' - 已存在: {affix_info}\n"
+            else:
+                result += f"✗ '{part}' - 可添加为新词缀\n"
+        
+        result += "\n💬 建议: 使用\"添加词缀\"标签添加这些词缀及其释义"
+        
+        return result
     
     def make_css_html(self) -> str:
         """生成 CSS HTML 字符串用于页面立即注入（使用字体倍率，保持相对大小）"""
@@ -564,7 +677,171 @@ button, .gr-button {{
                             outputs=delete_all_output
                         )
                 
-                # 页签8: 设置
+                # 页签8: 词缀管理
+                with gr.TabItem("🔤 词缀管理"):
+                    with gr.Group():
+                        gr.Markdown("### ➕ 添加词缀")
+                        with gr.Row():
+                            affix_input = gr.Textbox(
+                                label="词缀",
+                                placeholder="例: un-, -tion, -ly",
+                                max_lines=1
+                            )
+                            affix_definition = gr.Textbox(
+                                label="释义",
+                                placeholder="词缀的含义",
+                                lines=2
+                            )
+                            affix_category = gr.Dropdown(
+                                choices=["前缀", "后缀", "中缀", "其他"],
+                                value="后缀",
+                                label="分类"
+                            )
+                        
+                        add_affix_btn = gr.Button("➕ 添加词缀", variant="primary")
+                        add_affix_output = gr.Textbox(label="结果", interactive=False)
+                        
+                        add_affix_btn.click(
+                            fn=self.add_affix_ui,
+                            inputs=[affix_input, affix_definition, affix_category],
+                            outputs=add_affix_output
+                        )
+                    
+                    with gr.Group():
+                        gr.Markdown("### 🔍 查询词缀释义")
+                        query_affix_input = gr.Textbox(
+                            label="词缀",
+                            placeholder="输入要查询的词缀",
+                            max_lines=1
+                        )
+                        query_affix_btn = gr.Button("🔍 查询", variant="primary")
+                        query_affix_output = gr.Textbox(label="查询结果", interactive=False, lines=3)
+                        
+                        query_affix_btn.click(
+                            fn=self.query_affix_definition_ui,
+                            inputs=query_affix_input,
+                            outputs=query_affix_output
+                        )
+                    
+                    with gr.Group():
+                        gr.Markdown("### 📋 查看所有词缀")
+                        list_affix_btn = gr.Button("📋 刷新列表", variant="primary")
+                        list_affix_output = gr.Textbox(label="词缀列表", interactive=False, lines=15)
+                        
+                        list_affix_btn.click(
+                            fn=self.list_all_affixes_ui,
+                            inputs=[],
+                            outputs=list_affix_output
+                        )
+                
+                # 页签9: 词缀分类与分析
+                with gr.TabItem("📚 词缀分析"):
+                    with gr.Group():
+                        gr.Markdown("### 📊 按词缀分类单词")
+                        categorize_btn = gr.Button("📊 分析分类", variant="primary")
+                        categorize_output = gr.Textbox(label="分类结果", interactive=False, lines=20)
+                        
+                        categorize_btn.click(
+                            fn=self.categorize_words_by_affix_ui,
+                            inputs=[],
+                            outputs=categorize_output
+                        )
+                    
+                    with gr.Group():
+                        gr.Markdown("### 🔍 检测潜在词缀")
+                        detect_btn = gr.Button("🔍 检测", variant="primary")
+                        detect_output = gr.Textbox(label="检测结果", interactive=False, lines=10)
+                        
+                        detect_btn.click(
+                            fn=self.detect_affixes_ui,
+                            inputs=[],
+                            outputs=detect_output
+                        )
+                
+                # 页签10: 统计分析
+                with gr.TabItem("📊 统计分析"):
+                    with gr.Group():
+                        gr.Markdown("### 📈 每日加入热力图")
+                        daily_btn = gr.Button("📈 生成热力图", variant="primary")
+                        daily_output = gr.Textbox(label="热力图", interactive=False, lines=20)
+                        
+                        daily_btn.click(
+                            fn=self.get_daily_statistics_ui,
+                            inputs=[],
+                            outputs=daily_output
+                        )
+                    
+                    with gr.Group():
+                        gr.Markdown("### ⏰ 单词加入时间记录")
+                        timestamp_btn = gr.Button("⏰ 查看时间记录", variant="primary")
+                        timestamp_output = gr.Textbox(label="时间记录", interactive=False, lines=15)
+                        
+                        timestamp_btn.click(
+                            fn=self.get_word_timestamps_ui,
+                            inputs=[],
+                            outputs=timestamp_output
+                        )
+                    
+                    with gr.Group():
+                        gr.Markdown("### 📈 最近N天的新增单词")
+                        trending_days = gr.Number(
+                            value=7,
+                            label="天数",
+                            info="显示最近多少天的单词"
+                        )
+                        trending_btn = gr.Button("📈 查看趋势", variant="primary")
+                        trending_output = gr.Textbox(label="趋势", interactive=False, lines=15)
+                        
+                        trending_btn.click(
+                            fn=self.get_trending_words_ui,
+                            inputs=trending_days,
+                            outputs=trending_output
+                        )
+                    
+                    with gr.Group():
+                        gr.Markdown("### 📅 时间范围查询")
+                        with gr.Row():
+                            start_date = gr.Textbox(
+                                label="开始日期",
+                                placeholder="YYYY-MM-DD",
+                                max_lines=1
+                            )
+                            end_date = gr.Textbox(
+                                label="结束日期",
+                                placeholder="YYYY-MM-DD",
+                                max_lines=1
+                            )
+                        
+                        range_btn = gr.Button("📅 查询范围", variant="primary")
+                        range_output = gr.Textbox(label="范围查询结果", interactive=False, lines=10)
+                        
+                        range_btn.click(
+                            fn=self.query_time_range_ui,
+                            inputs=[start_date, end_date],
+                            outputs=range_output
+                        )
+                
+                # 页签11: Fail跳转建议
+                with gr.TabItem("💡 查询帮助"):
+                    with gr.Group():
+                        gr.Markdown("### ❓ 单词不存在时的建议")
+                        gr.Markdown("如果查询的单词不在词库中，系统会建议您将相关部分存入词缀库")
+                        
+                        fail_word_input = gr.Textbox(
+                            label="输入单词",
+                            placeholder="输入不在词库中的单词",
+                            max_lines=1
+                        )
+                        fail_btn = gr.Button("❓ 获取建议", variant="primary")
+                        fail_output = gr.Textbox(label="建议", interactive=False, lines=8)
+                        
+                        fail_btn.click(
+                            fn=self.fail_jump_affix_suggestion_ui,
+                            inputs=fail_word_input,
+                            outputs=fail_output
+                        )
+                
+                # 页签12: 设置
                 with gr.TabItem("⚙️ 设置"):
                     with gr.Group():
                         gr.Markdown("### 🔤 字体设置")
@@ -597,12 +874,12 @@ button, .gr-button {{
                         gr.Markdown("### 📏 字体倍率")
                         
                         font_size_slider = gr.Slider(
-                            minimum=80,
-                            maximum=150,
+                            minimum=95,
+                            maximum=120,
                             value=self.font_size,
-                            step=5,
+                            step=0.001,
                             label="字体倍率 (%)",
-                            info="80%-150%（影响文本及输入框，保持标题相对大小）"
+                            info="90%-120%（影响文本及输入框，保持标题相对大小）"
                         )
                         
                         size_apply_btn = gr.Button("💾 应用倍率", variant="primary")
@@ -666,7 +943,7 @@ button, .gr-button {{
                             outputs=[theme_result, theme_refresh]
                         )
                 
-                # 页签9: 帮助
+                # 页签13: 帮助
                 with gr.TabItem("❓ 帮助"):
                     gr.Markdown("""
                     ## LextrieBloom 使用说明
@@ -706,6 +983,25 @@ button, .gr-button {{
                     - **字体样式**: 选择正常、斜体、加粗或加粗斜体（修改后点击"应用样式"立即生效）
                     - **颜色主题**: 从 7 个 Gradio 内置主题中选择（点击"应用主题"会自动刷新页面以生效）
                     
+                    ### 🔤 词缀管理
+                    - **添加词缀**: 添加新的词缀（前缀/后缀）及其释义
+                    - **查询词缀**: 查询特定词缀的释义
+                    - **查看所有**: 列出所有已添加的词缀，按分类显示
+                    
+                    ### 📚 词缀分析
+                    - **按词缀分类**: 将词库中的单词按词缀自动分类
+                    - **检测潜在词缀**: 从已有单词中检测高频词缀，帮助构建词缀库
+                    
+                    ### 📊 统计分析
+                    - **每日热力图**: 显示每天加入多少个单词的统计图表
+                    - **加入时间记录**: 查看每个单词的加入时间（最新的单词优先显示）
+                    - **趋势分析**: 查看最近N天新增的单词
+                    - **时间范围查询**: 按日期范围查询单词加入记录
+                    
+                    ### 💡 查询帮助
+                    - **Fail跳转建议**: 当查询的单词不在词库中时，系统自动建议相关词缀供添加
+                    - 帮助用户快速积累和组织词缀库
+                    
                     ## 文件格式示例
                     
                     ```
@@ -721,6 +1017,10 @@ button, .gr-button {{
                     - 💾 支持多种存储格式（JSON、Pickle、CSV）
                     - 🔍 支持精确查询和前缀查询
                     - 📤 支持文件导入导出
+                    - ⏰ 单词加入时间记录和统计分析
+                    - 🔤 词缀管理和自动分类
+                    - 📊 每日热力图统计
+                    - 💡 Fail跳转智能建议
                     - 🎯 自动保存功能
                     - 🎨 字体/样式/主题自定义（设置持久化到 settings.json）
                     - 🔧 易于扩展的架构

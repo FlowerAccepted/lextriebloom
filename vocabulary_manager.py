@@ -5,7 +5,7 @@
 import json
 import pickle
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 from abc import ABC, abstractmethod
 
 from trie import Trie
@@ -58,8 +58,8 @@ class JSONStorage(StorageBackend):
             words = trie.get_all_words()
             data = {
                 "words": [
-                    {"word": word, "definition": definition}
-                    for word, definition in words
+                    {"word": word, "definition": definition, "timestamp": timestamp}
+                    for word, definition, timestamp in words
                 ]
             }
             with open(filepath, 'w', encoding='utf-8') as f:
@@ -79,8 +79,9 @@ class JSONStorage(StorageBackend):
             for item in data.get("words", []):
                 word = item.get("word", "")
                 definition = item.get("definition", "")
+                timestamp = item.get("timestamp", None)
                 if word:
-                    trie.insert(word, definition)
+                    trie.insert(word, definition, timestamp)
             return trie
         except Exception as e:
             print(f"JSON加载失败: {e}")
@@ -170,12 +171,22 @@ class VocabularyManager:
             word: 要查询的单词
             
         Returns:
-            (是否存在, 释义或错误消息)
+            (是否存在, 释义或错误消息, 时间戳)
         """
-        exists, definition = self.trie.search(word)
+        exists, definition, timestamp = self.trie.search(word)
         if exists:
-            return True, f"单词: {word}\n释义: {definition}"
-        return False, f"单词 '{word}' 不存在"
+            result = f"单词: {word}\n释义: {definition}"
+            if timestamp:
+                from datetime import datetime
+                try:
+                    dt = datetime.fromisoformat(timestamp)
+                    time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+                    result += f"\n加入时间: {time_str}"
+                except:
+                    pass
+            return True, result, timestamp
+        return False, f"单词 '{word}' 不存在", None
+    
     
     def prefix_search(self, prefix: str) -> tuple:
         """
@@ -195,7 +206,7 @@ class VocabularyManager:
             return False, f"没有找到以 '{prefix}' 开头的单词"
         
         result_str = f"找到 {len(results)} 个单词:\n"
-        for word, definition in results[:50]:  # 最多显示50个
+        for word, definition, _ in results[:50]:  # 最多显示50个
             result_str += f"• {word}: {definition}\n"
         
         if len(results) > 50:
@@ -215,7 +226,7 @@ class VocabularyManager:
             return True, "单词本为空"
         
         result_str = f"共有 {len(words)} 个单词:\n"
-        for word, definition in words[:100]:  # 最多显示100个
+        for word, definition, _ in words[:100]:  # 最多显示100个
             result_str += f"• {word}: {definition}\n"
         
         if len(words) > 100:
@@ -307,7 +318,7 @@ class VocabularyManager:
             elif format == "csv":
                 with open(filepath, 'w', encoding='utf-8', newline='') as f:
                     f.write("word,definition\n")
-                    for word, definition in words:
+                    for word, definition, _ in words:
                         # 简单的CSV转义
                         escaped_def = definition.replace('"', '""')
                         f.write(f'"{word}","{escaped_def}"\n')
@@ -317,3 +328,14 @@ class VocabularyManager:
             return True, f"导出成功到 {filepath}"
         except Exception as e:
             return False, f"导出失败: {e}"
+    
+    def get_all_words_with_timestamp(self) -> list:
+        """获取所有单词及其时间戳"""
+        return self.trie.get_all_words()
+    
+    def get_words_by_affix(self, affix_manager) -> Dict[str, list]:
+        """按词缀分类单词"""
+        words = self.trie.get_all_words()
+        # 提取单词和释义（忽略时间戳用于分类）
+        words_without_timestamp = [(w, d) for w, d, _ in words]
+        return affix_manager.categorize_words(words_without_timestamp)
