@@ -544,19 +544,20 @@ button, .gr-button {{
                 
                 # 页签4: 前缀查询
                 with gr.TabItem("🔎 前缀查询"):
+                    gr.Markdown("#### 📝 实时前缀查询\n输入前缀后会自动显示匹配的单词")
                     prefix_input = gr.Textbox(
                         label="输入前缀",
-                        placeholder="输入前缀以查询相关单词",
+                        placeholder="输入前缀以实时查询相关单词（如 'un', 'pre'）",
                         max_lines=1
                     )
-                    prefix_btn = gr.Button("🔎 查询", variant="primary")
                     prefix_output = gr.Textbox(
-                        label="查询结果",
+                        label="🔍 查询结果（实时更新）",
                         interactive=False,
-                        lines=10
+                        lines=15
                     )
                     
-                    prefix_btn.click(
+                    # 使用 change 事件实现实时查询，无需按钮
+                    prefix_input.change(
                         fn=self.prefix_search_ui,
                         inputs=prefix_input,
                         outputs=prefix_output
@@ -961,6 +962,7 @@ button, .gr-button {{
                     - 查询完整的单词及其释义
                     
                     ### 🔎 前缀查询
+                    - 输入前缀后**实时显示结果**（无需按钮）
                     - 查询所有以某个前缀开头的单词
                     - 结果按字典序排序
                     
